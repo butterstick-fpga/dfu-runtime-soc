@@ -77,10 +77,8 @@
 #endif
 
 //------------- CLASS -------------//
-#define CFG_TUD_DFU    1
 
-// DFU buffer size, it has to be set to the buffer size used in TUD_DFU_DESCRIPTOR
-#define CFG_TUD_DFU_XFER_BUFSIZE    512
+#define CFG_TUD_DFU_RUNTIME 1
 
 #ifdef __cplusplus
  }

@@ -24,9 +24,7 @@
  */
 
 #include "tusb.h"
-#include "class/dfu/dfu_device.h"
-#include <generated/soc.h>
-#include "flash.h"
+#include "class/dfu/dfu_rt_device.h"
 
 //--------------------------------------------------------------------+
 // Device Descriptors
@@ -73,43 +71,23 @@ uint8_t const * tud_descriptor_device_cb(void)
 // Configuration Descriptor
 //--------------------------------------------------------------------+
 
-// Number of Alternate Interface (each for 1 flash partition)
-#define ALT_COUNT   3
-
 enum
 {
-  ITF_NUM_DFU_MODE,
+  ITF_NUM_DFU_RT,
   ITF_NUM_TOTAL
 };
 
-#define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + TUD_DFU_DESC_LEN(ALT_COUNT))
-
-
-#define FUNC_ATTRS (DFU_ATTR_WILL_DETACH | DFU_ATTR_CAN_DOWNLOAD | DFU_ATTR_MANIFESTATION_TOLERANT)
+#define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + TUD_DFU_RT_DESC_LEN)
 
 uint8_t const desc_configuration[] =
 {
   // Config number, interface count, string index, total length, attribute, power in mA
-  TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN, 0x00, 200),
+  TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN, 0x00, 100),
 
-  // Interface number, Alternate count, starting string index, attributes, detach timeout, transfer size
-  TUD_DFU_DESCRIPTOR(ITF_NUM_DFU_MODE, 3, 4, FUNC_ATTRS, 50, CFG_TUD_DFU_XFER_BUFSIZE),
+  // Interface number, string index, attributes, detach timeout, transfer size */
+  TUD_DFU_RT_DESCRIPTOR(ITF_NUM_DFU_RT, 4, 0x0d, 1000, 4096),
 };
 
-uint8_t const desc_configuration_upgrade[] =
-{
-  // Config number, interface count, string index, total length, attribute, power in mA
-  TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN + 9, 0x00, 200),
-
-  // Interface number, Alternate count, starting string index, attributes, detach timeout, transfer size
-  TUD_DFU_DESCRIPTOR(ITF_NUM_DFU_MODE, 4, 4, FUNC_ATTRS, 50, CFG_TUD_DFU_XFER_BUFSIZE),
-};
-
-static bool bl_upgrade_alt = false;
-
-void enable_bootloader_alt(void){
-  bl_upgrade_alt = true;
-}
 
 // Invoked when received GET CONFIGURATION DESCRIPTOR
 // Application return pointer to descriptor
@@ -117,9 +95,6 @@ void enable_bootloader_alt(void){
 uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 {
   (void) index; // for multiple configurations
-  if(bl_upgrade_alt){
-    return desc_configuration_upgrade;
-  }
   return desc_configuration;
 }
 
@@ -132,68 +107,10 @@ char const* string_desc_arr [] =
 {
   (const char[]) { 0x09, 0x04 },                // 0: is supported language is English (0x0409)
   "Good Stuff Department",                      // 1: Manufacturer
-  "butterstick (dfu " CONFIG_REPO_GIT_DESC ")", // 2: Product
+  "ButterStick",                                // 2: Product
   "",                                           // 3: Serial, derived from FLASH UUID
-  "flash @0x200000 (gateware)",                 // 4: DFU alt0 name
-  "flash @0x400000 (firmware)",                 // 5: DFU alt1 name
-  "flash @0x800000 (extra)",                    // 6: DFU alt2 name
-  "flash @0x000000 (bootloader)",               // 7: DFU alt3 name
+  "butterstick (dfu runtime)",                  // 4: DFU alt0 name
 };
-
-// Microsoft Compatible ID Feature Descriptor
-#define MSFT_VENDOR_CODE    '~'     // Arbitrary, but should be printable ASCII
-#define MSFT_WCID_LEN       40
-
-// Microsoft OS String Descriptor. See: https://github.com/pbatard/libwdi/wiki/WCID-Devices
-static const uint16_t usb_string_microsoft = {0x0318, 'M','S','F','T','1','0','0', MSFT_VENDOR_CODE};
- 
-// Microsoft WCID
-const uint8_t usb_microsoft_wcid[MSFT_WCID_LEN] = {
-    MSFT_WCID_LEN, 0, 0, 0,         // Length
-    0x00, 0x01,                     // Version
-    0x04, 0x00,                     // Compatibility ID descriptor index
-    0x01,                           // Number of sections
-    0, 0, 0, 0, 0, 0, 0,            // Reserved (7 bytes)
-
-    0,                              // Interface number
-    0x01,                           // Reserved
-    'W','I','N','U','S','B',0,0,    // Compatible ID
-    0,0,0,0,0,0,0,0,                // Sub-compatible ID (unused)
-    0,0,0,0,0,0,                    // Reserved
-};
-
-
-//--------------------------------------------------------------------+
-// WCID use vendor class
-//--------------------------------------------------------------------+
-bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_request_t const * request)
-{
-  // nothing to with DATA & ACK stage
-  if (stage != CONTROL_STAGE_SETUP) return true;
-
-  switch (request->bmRequestType_bit.type)
-  {
-    case TUSB_REQ_TYPE_VENDOR:
-      switch (request->bRequest)
-      {
-        case MSFT_VENDOR_CODE:
-          if ( request->wIndex == 0x0004 )
-          {
-            // Return a Microsoft Compatible ID Feature Descriptor
-            return tud_control_xfer(rhport, request, (void*) usb_microsoft_wcid, MSFT_WCID_LEN);
-          }
-          break;
-        default: break;
-      }
-    break;
-
-
-    default: break;
-  }
-
-  // stall unknown request
-  return false;
-}
 
 static uint16_t _desc_str[40];
 
@@ -237,12 +154,6 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid)
   }
   else
   {
-    // Note: the 0xEE index string is a Microsoft OS 1.0 Descriptors.
-    // https://docs.microsoft.com/en-us/windows-hardware/drivers/usbcon/microsoft-defined-usb-descriptors
-    if(index == 0xEE){
-      return usb_string_microsoft;
-    }
-
     if ( !(index < sizeof(string_desc_arr)/sizeof(string_desc_arr[0])) ) return NULL;
 
     const char* str = string_desc_arr[index];

@@ -1,7 +1,3 @@
-# ButterStick bootloader
+# ButterStick DFU SoC
 
-A LiteX project to build the DFU bootloader used on the ButterStick FPGA board.
-
- ---
-
-Work in progress. 
+A LiteX project which builds a SoC with Luna for HS USB and TinyUSB support. the firmware makes use of TinyUSB to create a DFU runtime device.

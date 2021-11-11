@@ -40,6 +40,7 @@ from litex.soc.cores.spi_flash import SpiFlashDualQuad
 from rtl.platform import butterstick_r1d0
 from rtl.eptri import LunaEpTriWrapper
 from rtl.rgb import Leds
+from rtl.vccio import VccIo
 
 
 # CRG ---------------------------------------------------------------------------------------------
@@ -154,22 +155,7 @@ class BaseSoC(SoCCore):
         self.submodules.crg = crg = CRG(platform, sys_clk_freq)
 
         # VCCIO Control ----------------------------------------------------------------------------
-        vccio_pins = platform.request("vccio_ctrl")
-        pwm_timer = Signal(14)
-        self.sync += pwm_timer.eq(pwm_timer + 1)
-        self.comb += [
-            vccio_pins.pdm[0].eq(pwm_timer < int(2**14 * (0.13))),  # 3.3v
-            vccio_pins.pdm[1].eq(pwm_timer < int(2**14 * (0.13))),  # 3.3v
-            vccio_pins.pdm[2].eq(pwm_timer < int(2**14 * (0.70))),  # 1.8v
-        ]
-        counter = Signal(32)
-        self.sync += [
-            If(counter[16] == 0,
-                counter.eq(counter + 1),
-            ).Else(
-                vccio_pins.en.eq(1),
-            )
-        ]
+        self.submodules.vccio = VccIo(platform.request("vccio_ctrl"))
 
         # SPI Flash --------------------------------------------------------------------------------
         from litespi.modules import W25Q128JV
@@ -310,11 +296,11 @@ def main():
     # create compressed config (ECP5 specific)
     output_bitstream = os.path.join(builder.gateware_dir, f"{soc.platform.name}.bit")
     #os.system(f"ecppack --freq 38.8 --spimode qspi --compress --input {output_config} --bit {output_bitstream}")
-    os.system(f"ecppack --freq 38.8 --bootaddr 0x200000 --compress --input {output_config} --bit {output_bitstream}")
+    os.system(f"ecppack --freq 38.8 --bootaddr 0x000000 --compress --input {output_config} --bit {output_bitstream}")
 
     dfu_file = os.path.join(builder.gateware_dir, f"{soc.platform.name}.dfu")
     shutil.copyfile(output_bitstream, dfu_file)
-    os.system(f"dfu-suffix -v 1209 -p 5bf0 -a {dfu_file}")
+    os.system(f"dfu-suffix -v 1209 -p 5af1 -a {dfu_file}")
 
 
 def argdict(args):
